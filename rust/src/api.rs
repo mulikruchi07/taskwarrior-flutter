@@ -14,6 +14,108 @@ fn parse_datetime(input: &str) -> Option<DateTime<Utc>> {
     input.parse::<DateTime<Utc>>().ok()
 }
 
+fn parse_tag_query(tags_query: &str) -> (Vec<String>, Vec<String>) {
+    // Supports: "+work -home urgent" => include: ["work","urgent"], exclude:["home"]
+    let mut include = vec![];
+    let mut exclude = vec![];
+
+    for raw in tags_query.split_whitespace() {
+        if raw.is_empty() {
+            continue;
+        }
+
+        if let Some(tag) = raw.strip_prefix('+') {
+            if !tag.is_empty() {
+                include.push(tag.to_string());
+            }
+        } else if let Some(tag) = raw.strip_prefix('-') {
+            if !tag.is_empty() {
+                exclude.push(tag.to_string());
+            }
+        } else {
+            include.push(raw.to_string());
+        }
+    }
+
+    (include, exclude)
+}
+
+fn task_matches_query(task: &HashMap<String, String>, query: &HashMap<String, String>) -> bool {
+    // uuid exact
+    if let Some(q_uuid) = query.get("uuid") {
+        let q_uuid = q_uuid.trim();
+        if !q_uuid.is_empty() {
+            if task.get("uuid").map(|s| s.as_str()) != Some(q_uuid) {
+                return false;
+            }
+        }
+    }
+
+    // status exact
+    if let Some(q_status) = query.get("status") {
+        let q_status = q_status.trim();
+        if !q_status.is_empty() {
+            if task.get("status").map(|s| s.as_str()) != Some(q_status) {
+                return false;
+            }
+        }
+    }
+
+    // project exact
+    if let Some(q_project) = query.get("project") {
+        let q_project = q_project.trim();
+        if !q_project.is_empty() {
+            if task.get("project").map(|s| s.as_str()) != Some(q_project) {
+                return false;
+            }
+        }
+    }
+
+    // tags with +include -exclude
+    if let Some(q_tags) = query.get("tags") {
+        let q_tags = q_tags.trim();
+        if !q_tags.is_empty() {
+            let tags_str = task.get("tags").map(|s| s.as_str()).unwrap_or("");
+
+            let task_tags: std::collections::HashSet<&str> =
+                tags_str.split_whitespace().filter(|t| !t.is_empty()).collect();
+
+            let (include, exclude) = parse_tag_query(q_tags);
+
+            for t in include {
+                if !task_tags.contains(t.as_str()) {
+                    return false;
+                }
+            }
+
+            for t in exclude {
+                if task_tags.contains(t.as_str()) {
+                    return false;
+                }
+            }
+        }
+    }
+
+    true
+}
+
+#[frb]
+pub fn query_task(
+    taskdb_dir_path: String,
+    query: HashMap<String, String>,
+) -> Result<String, taskchampion::Error> {
+    let tasks = get_all_tasks(taskdb_dir_path);
+
+    let filtered: Vec<HashMap<String, String>> = tasks
+        .into_iter()
+        .filter(|t| task_matches_query(t, &query))
+        .collect();
+
+    let json = serde_json::to_string(&filtered)
+        .map_err(|e| taskchampion::Error::Other(anyhow::anyhow!(e)))?;
+    Ok(json)
+}
+
 #[frb]
 pub fn get_all_tasks_json(taskdb_dir_path: String) -> Result<String, taskchampion::Error> {
     let tasks = get_all_tasks(taskdb_dir_path); // your Vec<HashMap<String, String>>
@@ -272,5 +374,57 @@ fn test_add_task_with_tags() {
     assert!(tags.contains("tag2"), "tag2 missing in tags: {}", tags);
 
     // cleanup
+    fs::remove_dir_all(&tmp).ok();
+}
+
+#[test]
+fn test_query_task_filters_by_uuid_project_and_tags() {
+    use std::{collections::HashMap, env, fs};
+
+    let tmp = env::temp_dir().join(format!("taskdb_test_{}", Uuid::new_v4()));
+    let taskdb_path = tmp.to_string_lossy().into_owned();
+    fs::create_dir_all(&tmp).expect("create temp taskdb dir");
+
+    let uuid1 = Uuid::new_v4().to_string();
+    let uuid2 = Uuid::new_v4().to_string();
+
+    let mut t1: HashMap<String, String> = HashMap::new();
+    t1.insert("uuid".into(), uuid1.clone());
+    t1.insert("description".into(), "task one".into());
+    t1.insert("project".into(), "projA".into());
+    t1.insert("tags".into(), "work urgent".into());
+    assert_eq!(add_task(taskdb_path.clone(), t1), 0);
+
+    let mut t2: HashMap<String, String> = HashMap::new();
+    t2.insert("uuid".into(), uuid2.clone());
+    t2.insert("description".into(), "task two".into());
+    t2.insert("project".into(), "projB".into());
+    t2.insert("tags".into(), "home".into());
+    assert_eq!(add_task(taskdb_path.clone(), t2), 0);
+
+    // uuid
+    let mut q1: HashMap<String, String> = HashMap::new();
+    q1.insert("uuid".into(), uuid1.clone());
+    let json1 = query_task(taskdb_path.clone(), q1).expect("query_task");
+    let res1: Vec<HashMap<String, String>> = serde_json::from_str(&json1).unwrap();
+    assert_eq!(res1.len(), 1);
+    assert_eq!(res1[0].get("uuid").unwrap(), &uuid1);
+
+    // project
+    let mut q2: HashMap<String, String> = HashMap::new();
+    q2.insert("project".into(), "projB".into());
+    let json2 = query_task(taskdb_path.clone(), q2).expect("query_task");
+    let res2: Vec<HashMap<String, String>> = serde_json::from_str(&json2).unwrap();
+    assert_eq!(res2.len(), 1);
+    assert_eq!(res2[0].get("uuid").unwrap(), &uuid2);
+
+    // tags +/-
+    let mut q3: HashMap<String, String> = HashMap::new();
+    q3.insert("tags".into(), "+work -home".into());
+    let json3 = query_task(taskdb_path.clone(), q3).expect("query_task");
+    let res3: Vec<HashMap<String, String>> = serde_json::from_str(&json3).unwrap();
+    assert_eq!(res3.len(), 1);
+    assert_eq!(res3[0].get("uuid").unwrap(), &uuid1);
+
     fs::remove_dir_all(&tmp).ok();
 }

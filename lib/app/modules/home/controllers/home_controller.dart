@@ -164,8 +164,10 @@ class HomeController extends GetxController {
 
   Future<void> refreshReplicaTaskList() async {
     if (!taskReplica.value) return;
-    tasksFromReplica.value = await Replica.getAllTasksFromReplica();
-    debugPrint("Tasks from Replica: ${tasks.length}");
+    tasksFromReplica.value = await Replica.queryTasksFromReplica(
+      status: "pending",
+    );
+    debugPrint("Tasks from Replica (queried): ${tasksFromReplica.length}");
   }
 
   Future<void> refreshTasks(String clientId, String encryptionSecret) async {
