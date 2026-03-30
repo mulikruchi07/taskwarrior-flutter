@@ -9,7 +9,7 @@ import 'package:taskwarrior/app/utils/app_settings/app_settings.dart';
 import 'package:taskwarrior/app/utils/debug_logger/log_databse_helper.dart';
 import 'package:taskwarrior/app/utils/themes/dark_theme.dart';
 import 'package:taskwarrior/app/utils/themes/light_theme.dart';
-import 'package:taskwarrior/rust_bridge/frb_generated.dart/frb_generated.dart';
+import 'package:taskwarrior/rust_bridge/frb_generated/frb_generated.dart';
 import 'app/routes/app_pages.dart';
 
 LogDatabaseHelper _logDatabaseHelper = LogDatabaseHelper();

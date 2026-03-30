@@ -9,7 +9,7 @@ import 'package:taskwarrior/app/models/models.dart';
 import 'package:taskwarrior/app/utils/taskchampion/credentials_storage.dart';
 import 'package:taskwarrior/app/v3/champion/models/task_for_replica.dart';
 import 'package:taskwarrior/app/v3/models/task.dart';
-import 'package:taskwarrior/rust_bridge/frb_generated.dart/api.dart';
+import 'package:taskwarrior/rust_bridge/frb_generated/api.dart';
 import 'package:uuid/v4.dart';
 
 class Replica {
