@@ -78,7 +78,7 @@ class PriorityWidget extends StatelessWidget {
                     callback('L');
                     break;
                   case 'L':
-                    callback('X');
+                    callback(null);
                     break;
                 }
               }
